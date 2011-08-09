@@ -2,6 +2,8 @@
 Normally when you're trying to modify expression trees you need to write an expression visitor.
 When trying to plug your expression visitor into an IQuerable's expression tree, you need to write a linq provider (yikes).
 
+Implementation based on <http://stackoverflow.com/questions/1839901/how-to-wrap-entity-framework-to-intercept-the-linq-expression-just-before-executi>
+
 ## The solution
 QueryInterceptor introduces one extension method on IQueryable<T> (InterceptWith) that lets you plug in arbitrary expression visitors.
 
