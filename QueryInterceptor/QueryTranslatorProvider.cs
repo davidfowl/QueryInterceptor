@@ -5,19 +5,29 @@ using System.Linq;
 using System.Linq.Expressions;
 
 namespace QueryInterceptor {
-    internal class QueryTranslatorProvider<T> : ExpressionVisitor, IQueryProvider {
+    internal abstract class QueryTranslatorProvider : ExpressionVisitor {
         private readonly IQueryable _source;
+
+        protected QueryTranslatorProvider(IQueryable source) {
+            if (source == null)
+                throw new ArgumentNullException("source");
+
+            this._source = source;
+        }
+
+        internal IQueryable Source {
+            get { return this._source; }
+        }
+    }
+
+    internal class QueryTranslatorProvider<T> : QueryTranslatorProvider, IQueryProvider {
         private readonly IEnumerable<ExpressionVisitor> _visitors;
 
-        public QueryTranslatorProvider(IQueryable source, IEnumerable<ExpressionVisitor> visitors) {
-            if (source == null) {
-                throw new ArgumentNullException("source");
-            }
+        public QueryTranslatorProvider(IQueryable source, IEnumerable<ExpressionVisitor> visitors) : base(source) {
             if (visitors == null) {
                 throw new ArgumentNullException("visitors");
             }
             _visitors = visitors;
-            _source = source;
         }
 
         public IQueryable<TElement> CreateQuery<TElement>(Expression expression) {
@@ -25,7 +35,7 @@ namespace QueryInterceptor {
                 throw new ArgumentNullException("expression");
             }
 
-            return new QueryTranslator<TElement>(_source, expression, _visitors) as IQueryable<TElement>;
+            return new QueryTranslator<TElement>(this.Source, expression, _visitors) as IQueryable<TElement>;
         }
 
         public IQueryable CreateQuery(Expression expression) {
@@ -35,7 +45,7 @@ namespace QueryInterceptor {
 
             Type elementType = expression.Type.GetGenericArguments().First();
             IQueryable result = (IQueryable)Activator.CreateInstance(typeof(QueryTranslator<>).MakeGenericType(elementType),
-                    new object[] { _source, expression, _visitors });
+                    new object[] { this.Source, expression, _visitors });
             return result;
         }
 
@@ -53,7 +63,7 @@ namespace QueryInterceptor {
             }
 
             Expression translated = VisitAll(expression);
-            return _source.Provider.Execute(translated);
+            return this.Source.Provider.Execute(translated);
         }
 
         internal IEnumerable ExecuteEnumerable(Expression expression) {
@@ -62,7 +72,7 @@ namespace QueryInterceptor {
             }
 
             Expression translated = VisitAll(expression);
-            return _source.Provider.CreateQuery(translated);
+            return this.Source.Provider.CreateQuery(translated);
         }
 
         private Expression VisitAll(Expression expression) {
@@ -76,7 +86,14 @@ namespace QueryInterceptor {
             // Fix up the Expression tree to work with the underlying LINQ provider
             if (node.Type.IsGenericType &&
                 node.Type.GetGenericTypeDefinition() == typeof(QueryTranslator<>)) {
-                return _source.Expression;
+
+                var provider = ((IQueryable)node.Value).Provider as QueryTranslatorProvider;
+
+                if (provider != null) {
+                    return provider.Source.Expression;
+                }
+
+                return this.Source.Expression;
             }
 
             return base.VisitConstant(node);
